@@ -1,0 +1,52 @@
+#!/usr/bin/env python
+# -*- coding: utf-8; mode: python; -*-
+
+""" Fetches data files from Ministerio del Interior """
+
+from datetime import datetime
+from io import BytesIO
+from logging import INFO, Formatter, StreamHandler, getLogger
+from zipfile import is_zipfile, ZipFile
+
+from requests import get, head
+
+
+handler = StreamHandler()
+fmt = "%(asctime)s:%(filename)16s:%(lineno)3d:%(levelname)s: %(message)s"
+handler.setFormatter(Formatter(fmt))
+handler.setLevel(INFO)
+logger = getLogger(__file__)
+logger.addHandler(handler)
+logger.setLevel(INFO)
+
+PREFIX = 'http://www.infoelectoral.interior.es/docxl/apliext/'
+CONGRESO = ['02201606_MESA.zip', '02201512_MESA.zip', '02201111_MESA.zip',
+            '02200803_MESA.zip', '02200403_MESA.zip', ]
+SENADO = ['03201606_MESA.zip', '03201512_MESA.zip', '03201111_MESA.zip',
+          '03200803_MESA.zip', '03200403_MESA.zip', ]
+
+
+def fetch(u):
+    logger.info('Fetching {s:s}'.format(s=u))
+    res = PREFIX + u
+    logger.info('From {s:s}'.format(s=res))
+    t0 = datetime.now()
+    x = get(res)
+    d = datetime.now() - t0
+    logger.info('GET completed after {d:.2f} s.'.format(d=d.total_seconds()))
+    logger.info('Content-Type is {b:s}'.format(b=x.headers['Content-Type']))
+    try:
+        assert(x.headers['Content-Type'] == 'application/zip')
+    except AssertionError:
+        logger.fatal('Resource content mismatch: {s:s}'.format(s=res))
+        return
+    xx = BytesIO(x.content)
+    logger.info('Expected content is {b:b}'.format(b=is_zipfile(xx)))
+    assert(is_zipfile(xx))
+    filename = '../tmp/' + u
+    logger.info('Saving to {s:s}'.format(s=filename))
+    with open(filename, 'wb') as f:
+        f.write(x.content)
+
+files = CONGRESO + SENADO
+tmp = [fetch(i) for i in files]
