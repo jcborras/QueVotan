@@ -10,20 +10,11 @@ from zipfile import is_zipfile, ZipFile
 
 from requests import get, head
 
+from common import CONGRESO, SENADO, get_logger
 
-handler = StreamHandler()
-fmt = "%(asctime)s:%(filename)16s:%(lineno)3d:%(levelname)s: %(message)s"
-handler.setFormatter(Formatter(fmt))
-handler.setLevel(INFO)
-logger = getLogger(__file__)
-logger.addHandler(handler)
-logger.setLevel(INFO)
+logger = get_logger(__file__)
 
 PREFIX = 'http://www.infoelectoral.interior.es/docxl/apliext/'
-CONGRESO = ['02201606_MESA.zip', '02201512_MESA.zip', '02201111_MESA.zip',
-            '02200803_MESA.zip', '02200403_MESA.zip', ]
-SENADO = ['03201606_MESA.zip', '03201512_MESA.zip', '03201111_MESA.zip',
-          '03200803_MESA.zip', '03200403_MESA.zip', ]
 
 
 def fetch(u):
