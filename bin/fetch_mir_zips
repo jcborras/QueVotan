@@ -5,7 +5,6 @@
 
 from datetime import datetime
 from io import BytesIO
-from logging import INFO, Formatter, StreamHandler, getLogger
 from zipfile import is_zipfile, ZipFile
 
 from requests import get, head
