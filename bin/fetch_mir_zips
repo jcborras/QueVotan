@@ -1,42 +1,59 @@
 #!/usr/bin/env python
 # -*- coding: utf-8; mode: python; -*-
 
-""" Fetches data files from Ministerio del Interior """
+"""
+   Fetches data files from Ministerio del Interior
+   http://www.infoelectoral.interior.es/min/areaDescarga.html
 
-from datetime import datetime
-from io import BytesIO
-from zipfile import is_zipfile, ZipFile
+"""
 
-from requests import get, head
+from functools import partial
+from multiprocessing import Pool
 
-from common import CONGRESO, SENADO, get_logger
+from common import fetch_zip, get_logger
 
 logger = get_logger(__file__)
 
+CONGRESO = ['02201606_MESA.zip', '02201512_MESA.zip', '02201111_MESA.zip',
+            '02200803_MESA.zip', '02200403_MESA.zip', '02200003_MESA.zip',
+            '02199603_MESA.zip', '02199306_MESA.zip', '02198910_MESA.zip',
+            '02198606_MESA.zip', '02198210_MESA.zip', '02197903_MESA.zip',
+            '02197706_MESA.zip', ]
+
+SENADO = ['03201606_MESA.zip', '03201512_MESA.zip', '03201111_MESA.zip',
+          '03200803_MESA.zip', '03200403_MESA.zip', '03200003_MESA.zip',
+          '03199603_MESA.zip', '03199306_MESA.zip', '03198910_MESA.zip',
+          '03198606_MESA.zip', '03198210_MESA.zip', '03197903_MESA.zip',
+          '03197706_MESA.zip', ]
+
+# El mínimo nivel de granularidad de las dos primeras municipales
+# es el municipio de ahí que el nombre de fichero cambie
+MUNICIPALES = ['04201505_MESA.zip', '04201105_MESA.zip', '04200705_MESA.zip',
+               '04200305_MESA.zip', '04199906_MESA.zip', '04199505_MESA.zip',
+               '04199105_MESA.zip', '04198706_MESA.zip', '04198305_MUNI.zip',
+               '04197904_MUNI.zip', ]
+
+# Con las elecciones a cabildos anteriores a 1987 pasa algo similar
+# De 1983 no hay datos, y lo de 1979 son totales
+CABILDOS = ['06201505_MESA.zip', '06201105_MESA.zip', '06200705_MESA.zip',
+            '06200305_MESA.zip', '06199906_MESA.zip', '06199505_MESA.zip',
+            '06199105_MESA.zip', '06198706_MESA.zip',
+            '06197904_TOTA.zip', ]
+
+EUROPEAS = ['07201405_MESA.zip', '07200906_MESA.zip', '07200406_MESA.zip',
+            '07199906_MESA.zip', '07199406_MESA.zip', '07198906_MESA.zip',
+            '07198706_MESA.zip', ]
+
+# Así como a los referendums de los 70 en los que solo hay totales
+REFERENDUMS = ['01200502_MESA.zip', '01198603_MESA.zip',
+               '01197812_TOTA.zip', '01197612_TOTA.zip', ]
+
+TODOS_PROCESOS = CONGRESO + SENADO + MUNICIPALES
+TODOS_PROCESOS += CABILDOS + EUROPEAS + REFERENDUMS
+
 PREFIX = 'http://www.infoelectoral.interior.es/docxl/apliext/'
 
+files = TODOS_PROCESOS
 
-def fetch(u):
-    logger.info('Fetching {s:s}'.format(s=u))
-    res = PREFIX + u
-    logger.info('From {s:s}'.format(s=res))
-    t0 = datetime.now()
-    x = get(res)
-    d = datetime.now() - t0
-    logger.info('GET completed after {d:.2f} s.'.format(d=d.total_seconds()))
-    logger.info('Content-Type is {b:s}'.format(b=x.headers['Content-Type']))
-    try:
-        assert(x.headers['Content-Type'] == 'application/zip')
-    except AssertionError:
-        logger.fatal('Resource content mismatch: {s:s}'.format(s=res))
-        return
-    xx = BytesIO(x.content)
-    logger.info('Expected content is {b:b}'.format(b=is_zipfile(xx)))
-    assert(is_zipfile(xx))
-    filename = '../tmp/' + u
-    logger.info('Saving to {s:s}'.format(s=filename))
-    with open(filename, 'wb') as f:
-        f.write(x.content)
-
-files = CONGRESO + SENADO
-tmp = [fetch(i) for i in files]
+with Pool(8) as p:
+    p.map(partial(fetch_zip, dstdir='../tmp/mir/'), [PREFIX + i for i in files])
