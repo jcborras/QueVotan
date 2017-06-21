@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+# -*- coding: utf-8; mode: python; -*-
+
+"""
+   Fetches data files from the Gobierno Vasco web site.
+   http://www.euskadi.eus/q93TodoWar/eleccionesJSP/q93Contenedor.jsp?menu=li_2_1_8&opcion=e
+"""
+
+from functools import partial
+from multiprocessing import Pool
+
+from common import fetch_zip, get_logger
+
+logger = get_logger(__file__)
+
+DST_DIR = '../tmp/emaitzak/'
+
+l0 = ['16', '12', '09', '05', '01', '98', '94', '90', '86', '84', '80', ]
+PARLAMENTO_VASCO = list(map(lambda a: 'P' + a + '_c.zip', l0))
+
+l1 = ['16', '15', '11', '08', '04', '00', '96', '93', '89', '86', '82', '79',
+      '77']
+CONGRESO = list(map(lambda a: 'G' + a + '_c.zip', l1))
+
+l2 = ['15', '11', '07', '03', '99', '95', '91', '87', '83', '79', ]
+JUNTAS = list(map(lambda a: 'J' + a + '_c.zip', l2))
+
+l3 = ['79', '83', '87', '91', '95', '99', '03', '07', '11', '15', ]
+MUNICIPALES = list(map(lambda a: 'M' + a + '_c.zip', l3))
+
+l4 = ['87', '89', '94', '99', '04', '09', '14', ]
+EUROPEAS = list(map(lambda a: 'E' + a + '_c.zip', l4))
+
+l5 = ['78', '79', '86', '05', ]
+REFERENDUMS = list(map(lambda a: 'R' + a + '_c.zip', l5))
+
+TODOS_PROCESOS = REFERENDUMS + EUROPEAS + MUNICIPALES + JUNTAS
+TODOS_PROCESOS += CONGRESO + PARLAMENTO_VASCO
+
+PREFIX = 'http://www.euskadi.eus/appcont/emaitzak/excel/csv/'
+
+files = TODOS_PROCESOS
+
+with Pool(8) as p:
+    p.map(partial(fetch_zip, dstdir=DST_DIR), [PREFIX + i for i in files])

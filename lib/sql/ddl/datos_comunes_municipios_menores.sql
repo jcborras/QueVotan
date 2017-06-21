@@ -1,0 +1,30 @@
+DROP TABLE datos_comunes_municipios_menores;
+
+CREATE TABLE datos_comunes_municipios_menores (
+  tipo_de_municipio SMALLINT,
+  anyo_proceso_electoral SMALLINT,
+  mes_proceso_electoral SMALLINT,
+  numero_de_vuelta SMALLINT,
+  codigo_comunidad_autonoma SMALLINT,
+  codigo_ine_provincia SMALLINT,
+  codigo_ine_municipio SMALLINT,
+  nombre_del_municipio VARCHAR(100),
+  codigo_partido_judicial SMALLINT,
+  codigo_diputacion_provincial SMALLINT,
+  codigo_comarca SMALLINT,
+  poblacion_de_derecho INT,
+  n_mesas SMALLINT,
+  censo_del_ine INT,
+  censo_de_escrutinio INT,
+  censo_cere_en_escrutinio INT,
+  total_votantes_cere INT,
+  votantes_primer_avance INT,
+  votantes_segundo_avance INT,
+  votos_en_blanco INT,
+  votos_nulos INT,
+  votos_a_candidaturas INT,
+  n_escanyos_a_distribuir INT,
+  datos_oficiales CHAR,
+  PRIMARY KEY (tipo_de_municipio, anyo_proceso_electoral, mes_proceso_electoral,
+               codigo_ine_provincia, codigo_ine_municipio)
+);

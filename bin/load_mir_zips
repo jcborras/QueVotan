@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+# -*- coding: utf-8; mode: python; -*-
+
+
+from argparse import ArgumentParser
+from collections import OrderedDict
+from configparser import ConfigParser
+from csv import DictWriter, QUOTE_NONNUMERIC, register_dialect
+from datetime import datetime
+from os.path import expanduser
+from pickle import dump, load
+from sys import exit
+from zipfile import is_zipfile, ZipFile
+
+from common import get_logger
+from parsing import parse_zipfile
+from dbwith import PostgreSQLconnection
+
+logger = get_logger(__file__)
+
+
+def select_key_prefix(list_, prefix_):
+    return list(filter(lambda a: a[:2] == prefix_, list(list_.keys())))[0]
+
+
+def create_csv(obj, filename):
+    register_dialect('own', 'excel', delimiter=',', lineterminator='\n',
+                     quoting=QUOTE_NONNUMERIC)
+    with open(filename, 'w', encoding='utf-8') as f:
+        if obj:  # for 02197903_MESA.zip there is no DAT file with prefix 10
+            wr = DictWriter(f, obj[0].keys(), dialect='own')
+            wr.writerows(obj)
+
+
+def load_csv(dbcfg, tablename, csvfilename):
+    with PostgreSQLconnection(dbcfg) as db:
+        t0 = datetime.now()
+        db.bulkload(tablename, csvfilename)
+        d = datetime.now() - t0
+        logger.info('Load completed in {d:.2f} s.'.format(d=d.total_seconds()))
+
+
+def process_item(obj, prefix, dbcfg, just_parse):
+    root = {
+        '02': 'proceso_electoral',
+        '03': 'candidaturas',
+        '05': 'datos_comunes_municipios',
+        '06': 'datos_candidaturas_municipios',
+        '07': 'datos_comunes_ambito_superior_municipio',
+        '08': 'datos_candidaturas_ambito_superior_municipio',
+        '09': 'datos_comunes_mesas_cera',
+        '10': 'datos_candidaturas_mesas_cera',
+        '11': 'datos_comunes_municipios_menores',
+        '12': 'datos_candidaturas_municipios_menores',
+    }[prefix]
+    logger.info(root)
+    create_csv(obj[select_key_prefix(obj, prefix)],
+               '/tmp/{s:s}.csv'.format(s=root))
+    if just_parse:
+        return
+    load_csv(dbcfg, root, '/tmp/{s:s}.csv'.format(s=root))
+
+
+def process_zipfile(zipf, dbcfg, just_parse):
+    with open(zipf, 'rb') as f:
+        assert(is_zipfile(f))
+        y = ZipFile(f)
+        logger.info('Parsing contents')
+        l = parse_zipfile(y)
+        f = filter(lambda a: a[:2] not in ['FI', '01', '04', ], l.keys())
+        prefixes = [i[:2] for i in f]
+        for i in prefixes:
+            logger.info('Processing item with prefix {s:s}'.format(s=i))
+            process_item(l, i, dbcfg, just_parse)
+
+
+def parse_args(cmdline=None):
+    parser = ArgumentParser(description='load_mir_zips')
+    parser.add_argument('--data-file', dest='data_file',
+                        required=True, type=str,
+                        metavar='Extracted data file', action='store',
+                        help="Extracted data file.zip")
+    parser.add_argument('--just-parse', dest='just_parse',
+                        required=False, action='store_true',
+                        help="Just parse the file.zip. Do not load.")
+    opts = parser.parse_args(cmdline)
+    if not opts.data_file:
+        parser.print_help()
+        exit(-1)
+    return opts
+
+opts = parse_args()
+
+cfg = ConfigParser()
+cfg.read(expanduser('~/.quevotan.cfg'))
+
+fup = opts.data_file
+logger.info(fup)
+process_zipfile(fup, cfg['db'], opts.just_parse)

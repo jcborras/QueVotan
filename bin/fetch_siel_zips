@@ -1,0 +1,35 @@
+#!/usr/bin/env python
+# -*- coding: utf-8; mode: python; -*-
+
+"""
+   Fetches data files from the Sistema de Información Electoral
+   de la Junta de Andalucía.
+   http://www.juntadeandalucia.es/justiciaeinterior/siel/extraccion.html
+
+"""
+
+from functools import partial
+from multiprocessing import Pool
+
+from common import fetch_zip, get_logger
+
+logger = get_logger(__file__)
+
+DST_DIR = '../tmp/jdasiel/'
+
+l0 = ['05201503', '05201203', '05200803', '05200403', '05200003', '05199603',
+      '05199406', '05199006', '05198606', '05198205', ]
+PARLAMENTO = list(map(lambda a: a + '_MESA.zip', l0))
+
+l1 = ['01200702', '01200502', '01198603', '01198110', '01198002', '01197812',
+      '01197612', ]
+REFERENDUMS =  list(map(lambda a: a + '_MESA.zip', l1))
+
+TODOS_PROCESOS = PARLAMENTO + REFERENDUMS
+
+PREFIX = 'http://www.juntadeandalucia.es/justiciaeinterior/siel/logos/docxl/apliextr/'
+
+files = REFERENDUMS #TODOS_PROCESOS
+
+with Pool(8) as p:
+    p.map(partial(fetch_zip, dstdir=DST_DIR), [PREFIX + i for i in files])

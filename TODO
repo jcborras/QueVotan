@@ -1,0 +1,33 @@
+
+- Una base de datos para ternerlos a todos (infoelecciones) y un esquema para cada servicio de datos: mir, siel, emaitzak, Francia, Finlandia
+
+- Análisis pendientes:
+
+- De donde salieron los votos de POD en las últimas autonómicas de
+   Andalucia?
+
+- A dónde fueron a parar los votos de Bildu en las últimas autonómicas
+   de Euskadi?
+
+- Cómo funcionó la confluencia IU-POD en las últimas generales españolas?
+
+- Un esquema para cada servicio de datos: mir, siel, emaitzak
+
+-  Base de datos electorales en Euskadi (emaitzak significa resultados): 
+   http://www.euskadi.eus/appcont/emaitzak/excel/csv/P16_c.zip
+   http://www.euskadi.eus/appcont/emaitzak/excel/csv/G15_c.zip
+
+- Load Congreso and modify the loadser script accordingly to accept
+   the errors below
+
+- Continue with Senado and Municipales
+
+- Table candidaturas
+   
+## Errors! 
+
+Most from the Municipales
+
+Un artículo sobre el que evaluar mi modelo de transferencia:
+http://www.eldiario.es/internacional/quien-votaron-vuelta-Macron-Pen_0_641485941.html
+
