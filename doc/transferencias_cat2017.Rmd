@@ -1,0 +1,221 @@
+---
+title: "Transferencias de voto entre las Autonómicas Catalanas de 2015 y 2017"
+output: html_notebook
+---
+
+Voy a construir un modelo matemático que nos cuente cómo se han transferido los votos entre las últimas dos
+elecciones autonómicas catalanas (las de 2015 y las de 2017). Ésto es, voy a intentar
+inferir de qué estan hechos los resultados de 2017 a partir de los que se votó en 2015.
+
+O dicho de otra manera, voy a intentar contestar a las siguientes preguntas: si un votante votó a un partido en concreto en las autonómicas de 2015, ¿qué ha votado en 2017? ¿lo mismo? o ¿su papeleta ha cambiado de partido?.
+
+Para ello voy a construir un modelo matemático muy similar a la regresión linear
+pero restringiendo los valores de los coeficientes para que nos proporcionen una matrix de mezcla.
+
+```{r, eval=TRUE, echo=FALSE}
+library(limSolve)
+library(tidyr)
+```
+
+```{r, eval=TRUE, echo=FALSE}
+# Let's load the data
+x2015 <- read.csv('../dat/parlament2015.csv', header=FALSE,
+                  col.names=c('Municipio', 'variable', 'valor'),
+                  stringsAsFactors = FALSE)
+x2017 <- read.csv('../dat/parlament2017.csv', header=FALSE,
+                  col.names=c('Municipio', 'variable', 'valor'),
+                  stringsAsFactors = FALSE)
+```
+
+```{r, eval=TRUE, echo=FALSE}
+# The 2015 result have plenty of dupes in the residents abroad section so I'll remove them
+x2015a <- subset(x2015, Municipio != "-Residentes ausentes en el extranjero-")
+```
+
+```{r, eval=TRUE, echo=FALSE}
+# From long format to wide format. Thanks Hadley
+x2015w <- spread(x2015a, variable, valor, fill=0)
+x2017w <- spread(x2017, variable, valor, fill=0)
+```
+
+```{r, eval=TRUE, echo=FALSE, render=FALSE, results=FALSE}
+# Quítame Barcelona agregada, anda
+x2015w <- x2015w[x2015w$Municipio != 'Barcelona', ]
+x2017w <- x2017w[x2017w$Municipio != 'Barcelona', ]
+```
+
+```{r, eval=TRUE, echo=FALSE, render=FALSE, results=FALSE}
+# Are the values of the "Municipio" column the same for both matrices and in the same order?
+table(x2015w$Municipio == x2017w$Municipio)
+```
+```{r, eval=TRUE, echo=FALSE, render=FALSE, results=FALSE}
+# Hmmm.... I better investigate:
+x2015w[!(x2015w$Municipio == x2017w$Municipio),'Municipio']
+```
+
+```{r, eval=TRUE, echo=FALSE, render=FALSE, results=FALSE}
+x2017w[!(x2015w$Municipio == x2017w$Municipio), 'Municipio']
+```
+```{r, eval=TRUE, echo=FALSE}
+# OK, so they refer to the same town but the name is spelled differently.
+```
+
+## De los datos
+
+```{r, eval=TRUE, echo=FALSE}
+A.vars <- c('Abstención', "C's", 'CatSíqueesPot', 'CUP', 'JxSí', 'PP', 'PSC', 'unio.cat')
+B.vars <- c('Abstención', "C's", "CatComú-Podem", "CUP", "ERC-CatSí", "JUNTSxCAT", "PP", "PSC")
+A <- x2015w[,A.vars]
+B <- x2017w[,B.vars]
+```
+
+Los datos lo he conseguido haciendo _scrapping_ de los webs donde se publican los resultados del
+escutinio. Un ejemplo de cómo son los datos de 2015 por municipio que utilizaremos:
+
+```{r, eval=TRUE, echo=FALSE}
+print(x2015w[seq(234,237),])
+```
+
+O su equivalente de 2017 con el 99.8% de los votos escrutados:
+```{r, eval=TRUE, echo=FALSE}
+print(x2017w[seq(234,237),])
+```
+
+Para evitar que los resultados de la ciudad de Barcelona condiciones demasiado el resultado se han desagregrado
+por distrito para que sean comparables a los de las otra capitales de provincia u otras ciudades de alta población.
+
+Aquí pueden verse los resultados de 2015:
+```{r, eval=TRUE, echo=FALSE}
+x2015w[grep('Barcelona', x2015w$Municipio), ][seq(3),]
+```
+
+...y aquí los de 2017:
+```{r, eval=TRUE, echo=FALSE}
+x2017w[grep('Barcelona', x2017w$Municipio), ][seq(3),]
+```
+Dicha desagregración no se aplica al resto de capitales de provincia porque los resultados publicados 
+no están desagregados.
+
+## El modelo
+
+EL modelo que construyo intenta inferir el porcentaje de voto a un partido de la elección anterior a la posterior.
+Esto es, intenta obtener una matrix de mezcla que permite aproximar los resultados de 2017 por partido a partir de los resultados de 2015. Esto se expresa de forma matricial así:
+\[
+A x = B
+\]
+
+Donde $A$ y $B$ son los resultados de 2015 y 2017 respectivamente, donde cada fila de cada matriz representa
+los resultados de un mismo municipio y cada columna los resultados obtenidos por un partido en concreto
+en cada uno de los municipios o distritos. Finalmente $x$ es la matrix de mezcla que desconocemos y que
+queremos calcular (variable en el problema de optimización).
+
+Este calculo de haremos resolviendo un problema de optimización matemática para cada uno de los partidos
+contendientes en las elecciones de 2017. Dicho problema se expresa de la siguiente manera:
+
+\[
+\begin{eqnarray}
+\min_{x} ||A x - b_{i}||^2  \\
+s.t.  0 \preceq x \preceq 1 
+\end{eqnarray}
+\]
+
+donde $i$ es un entero entre $1$ y el número de partidos políticos en las elecciones de 2017.
+
+O dicho de otra manera: vamos a contruir un modelo de regresión linear de mínimos cuadrados para 
+cada uno de los contendientes de 2017 (valores de las columnas de $B$ expresados en la ecuación anterior
+como $b_{i}$) con la restricción de que los valores a calcular van a ser positivos e inferiores a 1.
+
+Dicha restricción es consecuencia de la naturaleza del problema: la proporción de votantes a un partido
+en 2015 que puede migrar su apoyo a otro partido en 2017 va a estar comprendida siempre entre 0 y 1.
+
+Este modelo considera la abstención como un partido más. De hecho de esta manera podemos incluso estimar
+el grado de abandono en los apoyos o incluso la reactivación del votante que se abstubo en la elecciones
+anteriores.
+
+Un ultimo comentario al respecto del modelo: los valores a utilizar en las variables A y B están
+normalizados en porcentaje (entre 0 para el 0% y 1 para el 100%) esto es así por dos motivos. Por
+un lado relativizamos las diferencias entre los municipios grandes y los pequeños y por otro dicha
+normalización nos permite obviar diferencias en las magnitudes del censo (fallecimientos, nuevas 
+mayorías de edad,...) entre una convocatoria electoral y otra.
+
+```{r, eval=TRUE, echo=FALSE}
+# Normalicemos a porcentajes:
+Apct <- A / rowSums(A)
+Bpct <- B / rowSums(B)
+```
+
+Un ejemplo de todo ello son las siguientes muestras de las matriz A que se corresponden a los resultados
+expuestos anteriormente de las elecciones de 2015:
+```{r, eval=TRUE, echo=FALSE}
+print(round(Apct[seq(234,237),], digits=2))
+```
+
+... y las correspondientes a los resultados de 2017:
+```{r, eval=TRUE, echo=FALSE}
+print(round(Bpct[seq(234,237),], digits=2))
+```
+
+## El código
+
+El análisis está realizado usando R. El problema de optimización se resuelve utilizando la funcion `lsei()`
+del paquete `limSolve`.
+
+La parametrización de la funcion a optimizar acomodándola a la signatura que la función `lsei()` espera es:
+```{r}
+n <- ncol(Apct)
+I <- diag(rep(1, n)) 
+G <- rbind(I, -I) 
+h <- rbind(matrix(0, n, 1), matrix(-1, n, 1)) 
+modelo.para <- function(s) lsei(A=Apct, B=Bpct[, s], G=G, H=h, type=2)
+```
+
+Una vez conseguido ésto tan solo iteramos sobre la lista de opciones políticas sobre las que construir modelos:
+
+```{r}
+objetivos <- c("Abstención", "C's", "CatComú-Podem", "CUP", "ERC-CatSí", "JUNTSxCAT", "PP", "PSC")
+modelos <- Map(modelo.para, objetivos)
+mix.matrix <- Reduce(rbind, (Map(function(z) z$X, modelos)))
+rownames(mix.matrix) <- objetivos
+```
+
+## El Resultado
+
+La matrix de mezcla obtenida pues consultarse a continuación. Para interpretarla hay que considerar que las
+filas definen los resultados de 2017 a partir de las columnas que basadas en los resultados de 2015.
+
+```{r, eval=TRUE, echo=FALSE}
+print(round(100*mix.matrix, digits=1))
+```
+
+Por ejemplo, segun este modelo, los resultados en 2017 de la formación **C's** está formados por todos sus votantes
+en 2015 más un 39% de los votantes a la formación **PP** más un 22% de los votates a **PSC**.
+
+También puede verse que los resultados de 2017 de las formaciones **PSC** y **CUP** son son principalmente el 66% y
+el 61% de sus votantes en 2015 respectivamente.
+
+Las interpretación para cada formación política contendientes son:
+
+ - Una parte significativa de los abstencionistas en 2015 dejaron de serlo en 2017.
+   
+ - El aumento en el resultado de **C's** está fundamentado apoyos de antiguos
+   votantes de **PSC** y **PP**.
+   
+ - **ERC-CatSí** fundamenta sus resultados en la antigua coalición **JxSi** esperado más aportaciones
+   significativas de **PSC** y **CUP** y antiguos abstencionistas.
+ 
+ - **JUNTSxCAT** recoge dos tercios de los votantes de la antigua coalición **JxSí**
+ 
+ - **CatComú-Podem**, **CUP**, **PSC** y **PP** pierden parte importante de su electorado.
+ 
+
+## Limitaciones del modelo.
+
+La crítica más natural al modelo es que las columnas de la matriz de mezcla no suman 1. Esto es visible con la
+composición de los resultados de **CatComú-Podem** que segun la matrix de mezcla estaría formados por casi un 8% de antivuos votantes de **C's** cosa que sería una inconsistencia con la composicion de votantes de ésta última formación
+pues la matrix de mezcla refleja una fidelidad absoluta de su electorado.
+
+Dicha limitación puede abordarse añadiendo un nuevo conjunto de restricciones al modelo forzando que la solucion
+sólo considere como factibles aquellas matrices de mezcla cuyas columnas sumen 1.
+
+Mientras éso sucede recomiendo tomar en consideración sólo los mayores valores de cada fila de la matrix de mezcla.
+
