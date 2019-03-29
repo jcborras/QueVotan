@@ -1,0 +1,218 @@
+#!/usr/bin/env python
+# -*- coding: utf-8; mode: python; -*-
+
+"""
+   Fetches data files from the Sistema de Información Electoral
+   de la Junta de Andalucía.
+   http://www.juntadeandalucia.es/justiciaeinterior/siel/extraccion.html
+
+"""
+
+from argparse import ArgumentParser
+from json import load
+from os.path import expanduser
+from logging import Formatter, StreamHandler, getLevelName, getLogger
+from sys import exit, stdout
+from zipfile import ZipFile
+
+from numpy import cumsum
+
+from quevotan import fetch_zip
+
+valid_set = {
+    'P': ['201503', '201203', '200803', '200403', '200003',
+          '199603', '199406', '199006', '198606', '198205', ],
+    'R': ['200702', '200502', '198603', '198110', '198002',
+          '197812', '197612', ],
+    }
+
+
+dsc = """Descarga ficheros de datos desde el SIEL de la Junta de Andalucia.
+Los tipos de proceso electoral son "P" (elecciones parlamentarias) o
+"R" (referendums). Las fechas posibles para resultados de referendums
+son: {r:s} y para resultados de elecciones parlamentarias son {p:s}."""
+
+dsc = dsc.format(r=", ".join(valid_set['R']), p=", ".join(valid_set['P']))
+parser = ArgumentParser(description=dsc)
+parser.add_argument('--config-file',  action='store', dest='config_file',
+                    help='Configuration file (required)', type=str)
+parser.add_argument('--tipo-proceso-electoral',  action='store',
+                    dest='tipo_proceso', type=str,
+                    help='Tipo del proceso electoral: R o P (requerido)')
+parser.add_argument('--fecha-proceso-electoral', action='store',
+                    dest='fecha_proceso', type=str,
+                    help='Fecha del proceso electoral (requerido)')
+
+valid_log_levels = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG']
+_ = 'Umbral de registro de mensajes de actividad. Valores aceptados: '
+_ += ','.join(valid_log_levels)
+parser.add_argument('--log-level',  action='store', dest='log_level',
+                    help=_, type=str)
+
+args = parser.parse_args()
+
+if not args.log_level:
+    args.log_level = 'WARNING'
+
+
+valid_prefix = {'P': '05', 'R': '01'}
+
+
+def valid_args(z):
+    valid_file_prefix = {'P': '01', 'R': '05'}
+    b = z.config_file and z.tipo_proceso and z.fecha_proceso
+    b = b and z.log_level in valid_log_levels
+    b = b and z.tipo_proceso in valid_set.keys()
+    if not b:
+        return False
+    s = valid_file_prefix[z.tipo_proceso] + z.fecha_proceso
+    b = b and z.fecha_proceso in valid_set[z.tipo_proceso]
+    return b
+
+
+if not valid_args(args):
+    parser.print_help()
+    exit(-1)
+
+
+logger = getLogger()
+logger.setLevel(getLevelName(args.log_level))
+
+sh = StreamHandler(stdout)
+sh.setLevel(args.log_level)
+fmt = '%(asctime)s %(name)s %(filename)s:%(lineno)d %(funcName)s '
+fmt += '%(levelname)s: %(message)s'
+sh.setFormatter(Formatter(fmt))
+
+logger.addHandler(sh)
+logger.addHandler(sh)
+
+CFG_FILE = expanduser(args.config_file)
+TIPO_PROCESO = args.tipo_proceso
+FECHA_PROCESO = args.fecha_proceso
+
+logger.info(f'Using configuration file: {CFG_FILE}')
+logger.info(f'Tipo de proceso electoral: {TIPO_PROCESO}')
+logger.info(f'Fecha del proceso electoral: {FECHA_PROCESO}')
+
+PREFIX = ('http://www.juntadeandalucia.es/justiciaeinterior'
+          '/siel/logos/docxl/apliextr/')
+
+
+ENCODING = 'windows-1252'  # a.k.a 'cp1252'
+        
+_ = PREFIX + valid_prefix[TIPO_PROCESO] + FECHA_PROCESO + '_MESA.zip'
+logger.info(f'Fetching {_}')
+
+x = fetch_zip(_, '/tmp/mesa.zip')
+logger.info('Deflating content')
+xx = ZipFile(x)
+z = dict([(i, [j for j in xx.open(i)]) for i in xx.namelist()])
+logger.info('Data available. Moving on.')
+
+def extract_fixed(content, filename, widths, keys):
+    k = filename + '_'
+    _ = list(filter(lambda a: k in a, content.keys()))
+    assert len(_) == 1, "Too many values"
+    _ = [i.decode(ENCODING) for i in content[_[0]]]
+    __ = widths
+    ll = cumsum(__)
+    *h, t = ll
+    lll = list(zip([0] + h, ll))
+    l = [[i[a[0]:a[1]].rstrip() for a in lll] for i in _]
+    return [dict(zip(keys, i)) for i in l]
+
+# TODO: use the full key with electoral process and date and not just
+# DATIND_ and so on
+    
+# Procesando el fichero de control (DATAIND)
+ind = extract_fixed(z, 'DATIND', [2, 4, 2], ['tipo_proceso', 'año', 'mes'])
+logger.info('ind file has {d:d} entries'.format(d=len(ind)))
+
+# Procesando el fichero de candidaturas (DATACAND)
+# On referendums, there is not such key
+if TIPO_PROCESO == 'P':
+    cand =  extract_fixed(
+        z, 'DATCAND',  [2, 4, 2, 6, 50, 150],
+        ['tipo_proceso', 'año', 'mes', 'código_candidatura', 'siglas',
+         'denominación'])
+    logger.info('ind file has {d:d} entries'.format(d=len(cand)))
+
+# Procesando el fichero de candidatos elegidos (DATACDTO)
+if TIPO_PROCESO == 'P':
+    cdto = extract_fixed(
+        z, 'DATCDTO', [2, 4, 2, 2, 3, 6, 3, 25, 25, 75],
+        ['tipo_proceso', 'año', 'mes', 'codigo_ine_provincia', 'relleno',
+         'código_candidatura', 'número_orden_candidato', 'nombre',
+         'apellido1', 'apellido'])
+    logger.info('ind file has {d:d} entries'.format(d=len(cdto)))
+
+                     
+# Procesando el fichero de datos comunes municipios (DATCOMMUNI)
+communi = extract_fixed(
+    z, 'DATCOMMUNI',
+    [2, 4, 2, 2, 2, 3, 2, 100, 5, 8, 8, 8, 8, 8, 8],
+    ['tipo_proceso', 'año', 'mes', 'código_comunidad_autónoma',
+     'código_ine_provincia', 'código_ine_municipio',
+     'número_de_distrito', 'nombre_municipio',
+     'número_de_mesas', 'censo_de_escrutinio', 'votos_en_blanco',
+     'votos_nulos', 'votos_a_candidaturas', 'votos_afirmativos',
+     'votos_negativos'])
+logger.info('ind file has {d:d} entries'.format(d=len(communi)))
+
+# Procesando el fichero de candidaturas en municipios (DATCANDMUNI)
+if TIPO_PROCESO == 'P':
+    candmuni = extract_fixed(
+        z, 'DATCANDMUNI', [2, 4, 2, 2, 3, 2, 6, 8],
+        ['tipo_proceso', 'año', 'mes',
+         'código_ine_provincia', 'código_ine_municipio', 'número_de_distrito',
+         'código_candidatura', 'votos_obtenidos'])
+    logger.info('ind file has {d:d} entries'.format(d=len(candmuni)))
+
+# Procesando el fichero de DATOS COMUNES DE ÁMBITO SUPERIOR AL MUNICIPIO (DATCOMSUPMUNI)
+comsupmuni = extract_fixed(
+    z, 'DATCOMSUPMUNI',  [2, 4, 2, 2, 2, 50, 5, 8, 8, 8, 8, 8, 8],
+    ['tipo_proceso', 'año', 'mes', 'código_comunidad_autónoma',
+     'código_ine_provincia', 'nombre_ámbito_territorial',
+     'número_de_mesas', 'censo_de_escrutinio', 'votos_en_blanco',
+     'votos_nulos', 'votos_a_candidaturas', 'votos_afirmativos',
+     'votos_negativos'])
+logger.info('ind file has {d:d} entries'.format(d=len(comsupmuni)))
+
+
+# Procesando el fichero de CANDIDATURAS DE ÁMBITO SUPERIOR AL MUNICIPIO (DATCANSUPMUNI)
+if TIPO_PROCESO == 'P':
+    cansupmuni = extract_fixed(
+        z, 'DATCANSUPMUNI', [2, 4, 2, 2, 2, 6, 8, 5],
+        ['tipo_proceso', 'año', 'mes', 'código_comunidad_autónoma',
+         'código_ine_provincia', 'código_candidatura', 'votos_obtenidos',
+         'candidatos_obtenidos'])
+    logger.info('ind file has {d:d} entries'.format(d=len(cansupmuni)))
+
+# Procesando el fichero de DATOS COMUNES DE MESAS y C.E.R.A (DATCOMMESAS)
+commesas = extract_fixed(
+    z, 'DATCOMMESAS',  [2, 4, 2, 2, 2, 3, 2, 4, 1, 7, 7, 7, 7, 7, 7],
+    ['tipo_proceso', 'año', 'mes', 'código_comunidad_autónoma',
+     'código_ine_provincia', 'código_ine_municipio',
+     'codigo_distrito_municipal', 'código_sección', 'código_mesa',
+     'censo_de_escrutinio_o_cera',
+     'votos_en_blanco', 'votos_nulos', 'votos_a_candidaturas',
+     'votos_afirmativos', 'votos_negativos'])
+logger.info('ind file has {d:d} entries'.format(d=len(commesas)))
+
+
+# Procesando el fichero de CANDIDATURAS DE MESAS Y C.E.R.A (DATCANDMESAS)
+if TIPO_PROCESO == 'P':
+    candmesas = extract_fixed(
+        z, 'DATCANDMESAS', [2, 4, 2, 2, 2, 3, 2, 4, 1, 6, 7],
+        ['tipo_proceso', 'año', 'mes', 'código_comunidad_autónoma',
+         'código_ine_provincia', 'código_ine_municipio',
+         'codigo_distrito_municipal', 'código_sección', 'código_mesa',
+         'código_candidatura', 'votos_obtenidos'])
+    logger.info('ind file has {d:d} entries'.format(d=len(candmesas)))
+
+# TODO: load into db (you only need ind and commesas, but load after
+# extract_fixed() and not here)
+
+logger.info('...and we are done!')
+exit(0)
