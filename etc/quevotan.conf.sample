@@ -1,0 +1,13 @@
+{
+  "dwh_shared_vol": "/tmp/quevotan_shared_dir",
+  "dwhcfg": {
+    "type": "psql",
+    "params": {
+      "host": "localhost",
+      "port": 15432,
+      "user": "quevotan",
+      "password": "quevotan",
+      "database": "quevotandb"
+    }
+  }
+}
