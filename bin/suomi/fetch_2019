@@ -1,0 +1,195 @@
+#!/usr/bin/env python
+# -*- coding: utf-8; mode: python-mode; -*-
+
+"""
+   File specs:
+   From https://tulospalvelu.vaalit.fi/EKV-2019/ohje/
+     - Vaalien_tulostiedostojen_kuvaus_EKV-EPV-2019_EN.pdf
+     - Vaalijarjestelma-XML-skeema.pdf
+
+"""
+
+from csv import DictWriter
+from datetime import datetime
+from io import BytesIO
+from json import dump, load
+from zipfile import ZipFile
+
+from requests import get
+
+urls = {
+    'by_candidate': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_ehd_maa.csv.zip',
+    'by_party': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_puo_maa.csv.zip',
+    'by_region': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_alu_maa.csv.zip',
+}
+
+responses = dict([(i[0], get(i[1])) for i in urls.items()])
+x = dict([(i, ZipFile(BytesIO(responses[i].content), 'r')) for i in responses.keys()])
+y = dict([(k, [x[k].read(i.filename) for i in x[k].filelist][0]) for k in x.keys()])
+z = dict([(k, y[k].decode('iso-8859-10').split('\n')) for k in y.keys()])
+
+
+def parse_by_region(i):
+    _ = [j.strip() for j in i.split(';')]
+    if len(_) == 1 or _[2] == '***':
+        return None
+    d = {'election type': _[0]}
+    d['electoral district number'] = int(_[1])
+    d['municipality number'] = int(_[2])
+    d['area type'] = _[3]
+    d['voting area idenfier'] = _[4]
+    d['voting district abbreviation FI'] = _[5]
+    d['voting district abbreviation SE'] = _[6]
+    d['voting area combined'] = _[7]
+    d['advance votes combined'] = _[8]
+    d['municipality/electoral_district/voting_area name FI'] = _[9]
+    d['municipality/electoral_district/voting_area name SE'] = _[10]
+    d['municipality type'] = _[11]
+    d['municipality language ratio'] = _[12]
+    d['total elegible voters'] = int(_[13])
+    d['total elegible men voters'] = int(_[14])
+    d['total elegible women voters'] = int(_[15])
+    d['total elegible voters in Finland'] = int(_[16])
+    d['total elegible men voters in Finland'] = int(_[17])
+    d['total elegible female voters in Finland'] = int(_[18])
+    d['persons voting in advance'] = int(_[36])
+    d['persons voting in advance, men'] = int(_[37])
+    d['persons voting on election day'] = int(_[38])
+    d['persons voting on election day, men'] = int(_[39])
+    d['total voters'] = int(_[40])
+    d['total voters men'] = int(_[41])
+    d['persons living in Finland voting in advance'] = int(_[42])
+    d['persons living in Finland voting in advance, men'] = int(_[43])
+    d['persons living in Finland voting on election day'] = int(_[44])
+    d['persons living in Finland voting on election day, men'] = int(_[45])
+    d['persons living in Finland who voted'] = int(_[46])
+    d['persons living in Finland who voted, men'] = int(_[47])
+    d['Finnish citizens living abroad voting in advance'] = int(_[48])
+    d['Finnish citizens living abroad voting in advance, men'] = int(_[49])
+    d['Finnish citizens living abroad voting in election day'] = int(_[50])
+    d['Finnish citizens living abroad voting in election day, men'] = int(_[51])
+    d['Finnish citizens living abroad voting'] = int(_[52])
+    d['Finnish citizens living abroad voting'] = int(_[53])
+    d['valid advance votes'] = int(_[63])
+    d['valid votes on election day'] = int(_[64])
+    d['total valid votes'] = int(_[65])
+    d['void advance votes'] = int(_[66])
+    d['void votes on election day'] = int(_[67])
+    d['total void votes'] = int(_[68])
+    d['calculation phase'] = _[72]
+    d['latest update'] = _[73]  # datetime.strptime(_[73], '%Y%m%d%H%M%S')
+    return d
+
+
+def parse_by_party(i):
+    _ = [j.strip() for j in i.split(';')]
+    if len(_) == 1 or _[2] == '***':
+        return None
+    d = {'election type': _[0]}
+    d['electoral district number'] = int(_[1])
+    d['municipality number'] = int(_[2])
+    d['area type'] = _[3]
+    d['voting area idenfier'] = _[4]
+    d['voting district abbreviation FI'] = _[5]
+    d['voting district abbreviation SE'] = _[6]
+    d['permanent party identifier'] = _[7]
+    d['standard party identifier'] = _[8]
+    d['list order number'] = _[9]
+    d['abbreviate name of party/group FI'] = _[10]
+    d['abbreviate name of party/group SE'] = _[11]
+    d['abbreviate name of party/group EN'] = _[12]
+    d['municipality/electoral_district/voting_area name FI'] = _[13]
+    d['municipality/electoral_district/voting_area name SE'] = _[14]
+    d['name of party/group FI'] = _[15]
+    d['name of party/group SE'] = _[16]
+    d['name of party/group EN'] = _[17]
+    d['electoral alliance number'] = _[20]
+    d['name of electoral alliance FI'] = _[21]
+    d['name of electoral alliance SE'] = _[22]
+    d['votes cast in advance'] = int(_[38])
+    d['votes cast on election day'] = int(_[39])
+    d['total votes cast'] = int(_[40])
+    return d
+
+
+def parse_by_candidate(i):
+    _ = [j.strip() for j in i.split(';')]
+    if len(_) == 1 or _[2] == '***':
+        return None
+    d = {'election type': _[0]}
+    d['electoral district number'] = int(_[1])
+    d['municipality number'] = int(_[2])
+    d['area type'] = _[3]
+    d['voting area idenfier'] = _[4]
+    d['voting district abbreviation FI'] = _[5]
+    d['voting district abbreviation SE'] = _[6]
+    d['permanent party identifier'] = _[7]
+    d['standard party identifier'] = _[8]
+    d['list order number'] = _[9]
+    d['electoral alliance number'] = _[10]
+    d['abbreviate name of party/group FI'] = _[11]
+    d['abbreviate name of party/group SE'] = _[12]
+    d['abbreviate name of party/group EN'] = _[13]
+    d['candidate number'] = _[14]
+    d['municipality/electoral_district/voting_area name FI'] = _[15]
+    d['municipality/electoral_district/voting_area name SE'] = _[16]
+    d['candidate first name'] = _[17]
+    d['candidate last name'] = _[18]
+    d['candidate gender'] = _[19]
+    d['mep'] = _[26]
+    d['mp'] = _[27]
+    d['municipal councillor'] = _[27]
+    d['provincial councillor'] = _[27]
+    d['votes cast in advance'] = int(_[32])
+    d['votes cast on election day'] = int(_[33])
+    d['calculation status'] = _[42]
+    d['calculation phase'] = _[43]
+    d['latest update'] = _[44]
+    return d
+    
+
+f = lambda a: [i for i in a if i is not None]
+
+_ = dict()
+_['by_region'] = f([parse_by_region(i) for i in z['by_region']])
+_['by_party'] = f([parse_by_party(i) for i in z['by_party']])
+_['by_candidate'] = f([parse_by_candidate(i) for i in z['by_candidate']])
+
+with open('2019.json', 'w', encoding='utf-8') as f:
+    dump(_, f)
+
+with open('2019.json', 'r', encoding='utf-8') as f:
+    _ = load(f)
+
+
+with open('2019_by_party.csv', 'w', encoding='utf-8') as f:
+    fieldnames = _['by_party'][0]
+    writer = DictWriter(f, fieldnames=fieldnames)
+    writer.writeheader()
+    for i in _['by_party']:
+        writer.writerow(i)
+
+
+urls_xml = {
+    #'by_candidate': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_ehd_maa.xml.zip',
+    #'by_party': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_puo_maa.xml.zip',
+    'by_region': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_alu_maa.xml.zip',
+}
+
+responses = dict([(i[0], get(i[1])) for i in urls_xml.items()])
+x = dict([(i, ZipFile(BytesIO(responses[i].content), 'r')) for i in responses.keys()])
+y = dict([(k, [x[k].read(i.filename) for i in x[k].filelist][0]) for k in x.keys()])
+
+from xml.etree.ElementTree import fromstring
+root = fromstring(y['by_region'].decode('iso-8859-10'))
+
+# How to parse the 2019 by region xml file:
+#   -  Locate all elements electoral-area with attrib area-type="A" (voting area)
+#       (i.e. <electoral-area identifier="003" area-type="A" joined-area=" ">)
+#   you can use xpath [i.attrib['area-type'] for i in root.findall('*/electoral-area')]  
+#   - as descendats you have:
+#        a) <area-data ...> elements with the voting area information
+#        b) <nominator ...> elements with the party results info.
+#   
+
+# TODO: beware with areas and aggregates. You may need a CSV in R for thisaggregate by voting are and party

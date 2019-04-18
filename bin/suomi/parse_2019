@@ -1,0 +1,143 @@
+#!/usr/bin/env python
+# -*- coding: utf-8; mode: python; -*-
+
+"""
+   File specs:
+   From https://tulospalvelu.vaalit.fi/EKV-2019/ohje/
+     - Vaalien_tulostiedostojen_kuvaus_EKV-EPV-2019_EN.pdf
+     - Vaalijarjestelma-XML-skeema.pdf
+
+"""
+
+from csv import DictWriter
+from datetime import datetime
+from io import BytesIO
+from json import dump, load
+from xml.etree.ElementTree import fromstring
+#from lxml.etree import fromstring, parse
+from zipfile import ZipFile
+
+from requests import get
+
+xmlfiles = {
+    'by_candidate': 'ekv-2019_aea_maa.xml',
+    'by_party': 'ekv-2019_apa_maa.xml',
+    'by_region': 'ekv-2019_aaa_maa.xml',
+}
+
+# 'rb' is important since the XML file contain the encoding information
+# that the parse() function can extract and apply on the rest of the file
+with open(xmlfiles['by_party'], 'r', encoding='iso-8859-1') as f:
+    #root = parse(f).getroot()
+    s = f.read()
+    root = fromstring(s) #.getroot()
+
+#_ = root.getchildren()
+#assert len(_) == 1, "Expected one single element in list"
+
+election = root.find('election')
+assert election is not None, "Expected an 'election' element"
+# election.items() holds the element attributes
+# election has two types of children: a single country-data and many electoral area
+
+country_data = election.find('country-data')
+assert country_data is not None, "Expected and 'country-data' element"
+assert country_data is not None, "Expected and 'country-data' element"
+# country_data has two types of children: area-data and nominator
+
+national_area_data = country_data.find('area-data')
+assert national_area_data is not None, "Expected and 'area-data' element"
+_ = 'Expected national area data'
+assert ('name', 'Koko maa') in national_area_data.items(), _
+national_nominators = country_data.findall('nominator')
+assert len(national_nominators) > 1, 'Expected a list of nominators'
+# Which allows us to get all country wide totals
+
+electoral_areas_v = election.findall('electoral-area')
+_ = "Expected all electoral areas to be of type 'V'"
+assert all([('area-type', 'V') in i.items() for i in electoral_areas_v]), _
+
+# Let's take one
+_ = electoral_areas_v[5]
+area_data_v = _.find('area-data')
+nominators_v = _.findall('nominator')
+electoral_areas_k = _.findall('electoral-area')
+_ = "Expected all electoral areas to be of type 'K'"
+assert all([('area-type', 'K') in i.items() for i in electoral_areas_k]), _
+
+_ = electoral_areas_k[8]
+area_data_k = _.find('area-data')
+nominators_k = _.findall('nominator')
+electoral_areas_a = _.findall('electoral-area')
+_ = "Expected all electoral areas to be of type 'A'"
+assert all([('area-type', 'A') in i.items() for i in electoral_areas_a]), _
+
+_ = electoral_areas_a[1]
+area_data_a = _.find('area-data')
+nominators_a = _.findall('nominator')
+electoral_areas_x = _.findall('electoral-area')
+assert len(electoral_areas_x) == 0, "No electoral areas expected at this level"
+
+# TODO: concatenate functions
+
+
+
+#[i for i in root.getiterator() if i.tag == 'electoral-area' and ]
+
+# now each descendent is of type electoral-area, area-data, nominator
+
+def g(z):
+    if z[0] == 'name' or z[0] == 'name-in-swedish':
+        return  ('area-' + z[0], z[1])
+    else:
+        return (z[0], z[1])
+
+
+def f(z):
+    a, b =  z.items(), [g(i) for i in z.find('area-data').items()]
+    c = [i.items() for i in z.findall('nominator')]
+    return [dict(a + b + i) for i in c]
+    
+
+ll = reduce(lambda a, b: a + b, [f(i) for i in l])
+ 
+#root.find("*/electoral-area")       
+
+# How to parse the 2019 by region xml file:
+#   -  Locate all elements electoral-area with attrib area-type="A" (voting area)
+#       (i.e. <electoral-area identifier="003" area-type="A" joined-area=" ">)
+#   you can use xpath [i.attrib['area-type'] for i in root.findall('*/electoral-area')]  
+#   - as descendats you have:
+#        a) <area-data ...> elements with the voting area information
+#        b) <nominator ...> elements with the party results info.
+#   
+
+
+f = lambda a: [i for i in a if i is not None]
+
+
+with open('2019.json', 'w', encoding='utf-8') as f:
+    dump(_, f)
+
+with open('2019.json', 'r', encoding='utf-8') as f:
+    _ = load(f)
+
+
+with open('2019_by_party.csv', 'w', encoding='utf-8') as f:
+    fieldnames = _['by_party'][0]
+    writer = DictWriter(f, fieldnames=fieldnames)
+    writer.writeheader()
+    for i in _['by_party']:
+        writer.writerow(i)
+
+
+urls_xml = {
+    #'by_candidate': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_ehd_maa.xml.zip',
+    #'by_party': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_puo_maa.xml.zip',
+    'by_region': 'https://tulospalvelu.vaalit.fi/EKV-2019/ekv-2019_alu_maa.xml.zip',
+}
+
+responses = dict([(i[0], get(i[1])) for i in urls_xml.items()])
+
+
+# TODO: beware with areas and aggregates. You may need a CSV in R for thisaggregate by voting are and party
